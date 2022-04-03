@@ -212,6 +212,22 @@ class Ciam {
 	}
 
 	/**
+	 * List users
+	 * 
+	 * @permissions `ciam.user.list`
+	 * @param skip number of users to skip
+	 * @param limit maximum number of users to return in one request
+	 * @returns an array of {@link Model.Role}, or undefined
+	 * @throws if {@link skip} is less than 0
+	 * @throws if {@link limit} is not in the range 1..100
+	 */
+	async listUsers(skip: number = 0, limit: number = 100): Promise<Array<User> | undefined> {
+		Check.min(skip, 0, 'skip');
+		Check.inRange(limit, 1, 100, 'limit');
+		return cast<Array<User>>(await this.api.get(`/user/list?skip=${skip}&limit=${limit}`));
+	}
+
+	/**
 	 * Check if the current token is valid
 	 *
 	 * @returns true if the current ciam token is valid
@@ -220,11 +236,6 @@ class Ciam {
 		return this.api.get('/user/valid')
 			.then(res => true)
 			.catch(err => false);
-	}
-
-	// TODO: not yet implemented on backend
-	async listUsers(): Promise<Array<User> | undefined> {
-		return cast<Array<User>>(await this.api.get('/user/list'));
 	}
 
 	/**
