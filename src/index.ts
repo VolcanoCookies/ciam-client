@@ -27,7 +27,7 @@ class Ciam {
 			}
 		});
 
-		this.api.get('/auth/valid').then(res => {
+		this.api.get('/user/valid').then(res => {
 			if (res.status == 401)
 				throw new Error('Invalid CIAM token');
 		});
