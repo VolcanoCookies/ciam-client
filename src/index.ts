@@ -6,6 +6,20 @@ type DiscordUser = Model.DiscordUser;
 type Role = Model.Role;
 type Permission = Model.Permission;
 
+class InvalidToken extends Error {
+	constructor(token: string) {
+		super(`Invalid ciam token "${token}"`);
+		this.name = 'InvalidToken';
+	}
+}
+
+class PermissionError extends Error {
+	constructor(missing: Array<string>) {
+		super(`Missing permissions: [${missing.join(', ')}]`);
+		this.name = 'PermissionError';
+	}
+}
+
 function cast<T>(obj: any): T | undefined {
 	return obj ? obj as T : undefined;
 }
@@ -19,7 +33,21 @@ class Ciam {
 	constructor(token: string, baseUrl: string) {
 		this.token = token;
 		this.baseUrl = baseUrl;
+		this.api = axios;
+		this.setToken(token);
 
+		this.api.interceptors.response.use(function (response) {
+			return response;
+		}, function (error: Error | AxiosError) {
+			if (axios.isAxiosError(error) && error.response?.data?.missing) {
+				const missing: Array<string> = error.response?.data?.missing || [];
+				return Promise.reject(new PermissionError(missing));
+			} else return Promise.reject(error);
+		});
+	}
+
+	async setToken(token: string) {
+		this.token = token;
 		this.api = axios.create({
 			baseURL: this.baseUrl,
 			headers: {
@@ -27,28 +55,8 @@ class Ciam {
 			}
 		});
 
-		this.api.get('/user/valid').then(res => {
-			if (res.status == 401)
-				throw new Error('Invalid CIAM token');
-		});
-
-		this.api.interceptors.response.use(function (response) {
-			return response;
-		}, function (error) {
-			if (error.response.status == 401) {
-				const message = error.data as string;
-				if (message.startsWith('Missing permissions')) {
-					return Promise.reject(message);
-				} else {
-					return Promise.reject('Invalid CIAM token');
-				}
-			}
-			if (error.response.status == 404 && error.response.data?.length > 0) {
-				return Promise.resolve(undefined);
-				return Promise.reject(error.response.data);
-			}
-			return Promise.reject(error);
-		});
+		const validRes = await this.api.get('/user/valid');
+		if (validRes.status != 200) return Promise.reject(new InvalidToken(token));
 	}
 
 	/**
