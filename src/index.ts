@@ -1,10 +1,8 @@
 import axios, { Axios, AxiosError, AxiosResponse } from 'axios';
-import { Check, Model } from 'ciam-commons';
+import { CheckResult, discordId, DiscordUser, flag, inRange, min, notEmpty, objectId, oneOf, Permission, Role, strictFlag, User } from 'ciam-commons';
 
-type User = Model.User;
-type DiscordUser = Model.DiscordUser;
-type Role = Model.Role;
-type Permission = Model.Permission;
+
+
 
 class InvalidToken extends Error {
 	constructor(token: string) {
@@ -27,12 +25,16 @@ function cast<T>(obj: any): T | undefined {
 class Ciam {
 	token: string;
 	baseUrl: string;
+	domain: string;
 
 	api: Axios;
 
-	constructor(token: string, baseUrl: string) {
+	self!: User;
+
+	constructor(token: string, baseUrl: string, domain: string) {
 		this.token = token;
 		this.baseUrl = baseUrl;
+		this.domain = domain;
 		this.api = axios;
 		this.setToken(token);
 
@@ -55,8 +57,9 @@ class Ciam {
 			}
 		});
 
-		const validRes = await this.api.get('/user/valid');
+		const validRes = await this.api.get('/user/me');
 		if (validRes.status != 200) return Promise.reject(new InvalidToken(token));
+		else this.self = await validRes.data as User;
 	}
 
 	/**
@@ -64,11 +67,11 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.role.get.ROLE_ID`
 	 * @param roleId the id of the role to get
-	 * @returns A {@link Model.Role}, or undefined
+	 * @returns A {@link Role}, or undefined
 	 * @throws if {@link roleId} is not a valid objectId
 	 */
 	async getRole(roleId: string): Promise<Role | undefined> {
-		Check.objectId(roleId);
+		objectId(roleId);
 		return cast<Role>(await this.api.get(`/role/${roleId}`));
 	}
 
@@ -77,11 +80,11 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.role.delete.ROLE_ID`
 	 * @param roleId the id of the role to delete
-	 * @returns the deleted {@link Model.Role}, or undefined
+	 * @returns the deleted {@link Role}, or undefined
 	 * @throws if {@link roleId} is not a valid objectId
 	 */
 	async deleteRole(roleId: string): Promise<Role | undefined> {
-		Check.objectId(roleId);
+		objectId(roleId);
 		return cast<Role>(await this.api.delete(`/role/${roleId}`));
 	}
 
@@ -92,15 +95,15 @@ class Ciam {
 	 * @param name the name of this role
 	 * @param description the description of this role
 	 * @param permissions the permissions of this role
-	 * @returns the new {@link Model.Role}, or undefined
+	 * @returns the new {@link Role}, or undefined
 	 * @throws if {@link name} is empty
 	 * @throws if {@link description} is empty
 	 * @throws if {@link permissions} contains invalid flags
 	 */
 	async createRole(name: string, description: string, permissions: Array<string>): Promise<Role | undefined> {
-		Check.notEmpty(name, 'name');
-		Check.notEmpty(description, 'description');
-		permissions.forEach(f => Check.flag(f));
+		notEmpty(name, 'name');
+		notEmpty(description, 'description');
+		permissions.forEach(f => flag(f));
 		const obj = {
 			name: name,
 			description: description,
@@ -114,17 +117,17 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.role.update.ROLE_ID`
 	 * @param role the role to update, with its fields modified to the desired values. Empty fields remain unchanged
-	 * @returns the updated {@link Model.Role}, or undefined
+	 * @returns the updated {@link Role}, or undefined
 	 * @throws if {@link role}._id is not a valid objectId
 	 * @throws if {@link role}.name exists and is empty
 	 * @throws if {@link role}.description exists and is empty
 	 * @throws if {@link role}.permissions contains invalid stict permission flags
 	 */
 	async updateRole(role: Role): Promise<Role | undefined> {
-		Check.objectId(role._id);
-		role.permissions?.forEach(p => Check.flag(p));
-		if (role.name) Check.notEmpty(role.name, 'role.name');
-		if (role.description) Check.notEmpty(role.name, 'role.description');
+		objectId(role._id);
+		role.permissions?.forEach(p => flag(p));
+		if (role.name) notEmpty(role.name, 'role.name');
+		if (role.description) notEmpty(role.name, 'role.description');
 		return cast<Role>(await this.api.post('/role/update', role));
 	}
 
@@ -134,13 +137,13 @@ class Ciam {
 	 * @permissions `ciam.role.list`
 	 * @param skip number of roles to skip
 	 * @param limit maximum number of roles to return in one request
-	 * @returns an array of {@link Model.Role}, or undefined
+	 * @returns an array of {@link Role}, or undefined
 	 * @throws if {@link skip} is less than 0
 	 * @throws if {@link limit} is not in the range 1..100
 	 */
 	async listRoles(skip: number = 0, limit: number = 100): Promise<Array<Role> | undefined> {
-		Check.min(skip, 0, 'skip');
-		Check.inRange(limit, 1, 100, 'limit');
+		min(skip, 0, 'skip');
+		inRange(limit, 1, 100, 'limit');
 		return cast<Array<Role>>(await this.api.get(`/role/list?skip=${skip}&limit=${limit}`));
 	}
 
@@ -152,17 +155,17 @@ class Ciam {
 	 * @param roles the roles of this user
 	 * @param permissions the permissions of this user
 	 * @param discord the discord object of this user
-	 * @returns the newly created {@link Model.User}, or unefined
+	 * @returns the newly created {@link User}, or unefined
 	 * @throws if {@link name} is empty
 	 * @throws if {@link discord}.id is not a valid discord id
 	 * @throws if {@link roles} contain invalid objectIds
 	 * @throws if {@link permissions} contains invalid flags
 	 */
 	async createUser(name: string, roles: Array<string>, permissions: Array<string>, discord: DiscordUser): Promise<User | undefined> {
-		Check.notEmpty(name, 'name');
-		if (discord) Check.discordId(discord.id, 'discord.id');
-		roles.forEach(r => Check.objectId(r));
-		permissions.forEach(p => Check.flag(p));
+		notEmpty(name, 'name');
+		if (discord) discordId(discord.id, 'discord.id');
+		roles.forEach(r => objectId(r));
+		permissions.forEach(p => flag(p));
 		const obj = {
 			name: name,
 			roles: roles,
@@ -177,11 +180,11 @@ class Ciam {
 	 * 
 	 * @permissins `ciam.user.get.USER_ID`
 	 * @param userId the id of the user to get
-	 * @returns the {@link Model.User}, or undefined
+	 * @returns the {@link User}, or undefined
 	 * @throws if {@link userId} is not a valid objectId
 	 */
 	async getUser(userId: string): Promise<User | undefined> {
-		Check.objectId(userId);
+		objectId(userId);
 		return cast<User>(await this.api.get(`/user/${userId}`));
 	}
 
@@ -190,11 +193,11 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.user.delete.USER_ID`
 	 * @param userId id of the user to delete
-	 * @returns the deleted {@link Model.User}, or undefined
+	 * @returns the deleted {@link User}, or undefined
 	 * @throws if {@link userId} is not a valid objectId
 	 */
 	async deleteUser(userId: string) {
-		Check.objectId(userId);
+		objectId(userId);
 		return cast<Role>(await this.api.delete(`/role/${userId}`));
 	}
 
@@ -203,7 +206,7 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.user.update.USER_ID`
 	 * @param user the user to update, with their fields modified to the desired values. Empty fields remain unchanged
-	 * @returns the updated {@link Model.User}, or undefined
+	 * @returns the updated {@link User}, or undefined
 	 * @throws if {@link user}._id is not a valid objectId
 	 * @throws if {@link user}.name exists and is empty
 	 * @throws if {@link user}.discord.id is not a valid discord id
@@ -211,11 +214,11 @@ class Ciam {
 	 * @throws if {@link user}.permissions contains invalid flags
 	 */
 	async updateUser(user: User): Promise<User | undefined> {
-		Check.objectId(user._id);
-		if (user.discord) Check.discordId(user.discord?.id, 'discord.id');
-		user.roles?.forEach(r => Check.objectId(r));
-		user.permissions?.forEach(p => Check.flag(p));
-		if (user.name) Check.notEmpty(user.name, 'user.name');
+		objectId(user._id);
+		if (user.discord) discordId(user.discord?.id, 'discord.id');
+		user.roles?.forEach(r => objectId(r));
+		user.permissions?.forEach(p => flag(p));
+		if (user.name) notEmpty(user.name, 'user.name');
 		return cast<User>(await this.api.post('/user/update'));
 	}
 
@@ -225,13 +228,13 @@ class Ciam {
 	 * @permissions `ciam.user.list`
 	 * @param skip number of users to skip
 	 * @param limit maximum number of users to return in one request
-	 * @returns an array of {@link Model.Role}, or undefined
+	 * @returns an array of {@link Role}, or undefined
 	 * @throws if {@link skip} is less than 0
 	 * @throws if {@link limit} is not in the range 1..100
 	 */
 	async listUsers(skip: number = 0, limit: number = 100): Promise<Array<User> | undefined> {
-		Check.min(skip, 0, 'skip');
-		Check.inRange(limit, 1, 100, 'limit');
+		min(skip, 0, 'skip');
+		inRange(limit, 1, 100, 'limit');
 		return cast<Array<User>>(await this.api.get(`/user/list?skip=${skip}&limit=${limit}`));
 	}
 
@@ -251,11 +254,11 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.permission.get.FLAG`
 	 * @param flag the flag to get permissions for
-	 * @returns the {@link Model.Permission} for this flag, or undefined
+	 * @returns the {@link Permission} for this flag, or undefined
 	 * @throws if {@link flag} is not a valid strict flag
 	 */
 	async getPermission(flag: string): Promise<Permission | undefined> {
-		Check.strictFlag(flag);
+		strictFlag(flag);
 		return cast<Permission>(await this.api.get(`/permission/${flag}`));
 	}
 
@@ -264,11 +267,11 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.permission.delete.FLAG`
 	 * @param flag the flag to delete
-	 * @returns the deleted {@link Model.Permission}, or undefined
+	 * @returns the deleted {@link Permission}, or undefined
 	 * @throws if {@link flag} is not a valid strict flag
 	 */
 	async deletePermission(flag: string): Promise<Permission | undefined> {
-		Check.strictFlag(flag);
+		strictFlag(flag);
 		return cast<Permission>(await this.api.delete(`/permission/${flag}`));
 	}
 
@@ -279,15 +282,15 @@ class Ciam {
 	 * @param name the name of this permission
 	 * @param description the description of this permission
 	 * @param flag the flag of this permission
-	 * @returns the new {@link Model.Permission}, or undefined
+	 * @returns the new {@link Permission}, or undefined
 	 * @throws if {@link name} is empty
 	 * @throws if {@link description} is empty
 	 * @throws if {@link flag} is not a valid strict flag
 	 */
 	async createPermission(name: string, description: string, flag: string): Promise<Permission | undefined> {
-		Check.notEmpty(name, 'name');
-		Check.notEmpty(description, 'description');
-		Check.strictFlag(flag);
+		notEmpty(name, 'name');
+		notEmpty(description, 'description');
+		strictFlag(flag);
 		const obj = {
 			name: name,
 			description: description,
@@ -301,15 +304,15 @@ class Ciam {
 	 * 
 	 * @permissions `ciam.permission.update.FLAG`
 	 * @param permission the permission to update, with its fields modified to the desired values. Empty fields remain unchanged
-	 * @returns the updated {@link Model.Permission}, or undefined
+	 * @returns the updated {@link Permission}, or undefined
 	 * @throws if {@link permission}.flag is not a valid strict flag
 	 * @throws if {@link permission}.name exists and is empty
 	 * @throws if {@link permission}.description exists and is empty
 	 */
 	async updatePermission(permission: Permission): Promise<Permission | undefined> {
-		Check.strictFlag(permission.flag);
-		if (permission.name) Check.notEmpty(permission.name, 'permission.description');
-		if (permission.description) Check.notEmpty(permission.description, 'permission.description');
+		strictFlag(permission.flag);
+		if (permission.name) notEmpty(permission.name, 'permission.description');
+		if (permission.description) notEmpty(permission.description, 'permission.description');
 		return cast<Permission>(await this.api.post('/permission/update', permission));
 	}
 
@@ -319,13 +322,13 @@ class Ciam {
 	 * @permissions `ciam.permission.me`
 	 * @param skip number of permissions to skip
 	 * @param limit maximum number of permissions to return
-	 * @returns an array of {@link Model.Permission}, or undefined
+	 * @returns an array of {@link Permission}, or undefined
 	 * @throws if {@link skip} is less than 0
 	 * @throws if {@link limit} is not in the range 1..100
 	 */
 	async ownPermissions(skip: number = 0, limit: number = 100): Promise<Array<Permission> | undefined> {
-		Check.min(skip, 0, 'skip');
-		Check.inRange(limit, 1, 100, 'limit');
+		min(skip, 0, 'skip');
+		inRange(limit, 1, 100, 'limit');
 		return cast<Array<Permission>>(await this.api.get(`/permission/me?skip=${skip}&limit=${limit}`));
 	}
 
@@ -335,13 +338,13 @@ class Ciam {
 	 * @permissions `ciam.permission.list`
 	 * @param skip number of permissions to skip
 	 * @param limit maximum number of permissions to return
-	 * @returns an array of {@link Model.Permission}, or undefined
+	 * @returns an array of {@link Permission}, or undefined
 	 * @throws if {@link skip} is less than 0
 	 * @throws if {@link limit} is not in the range 1..100
 	 */
 	async listPermissions(skip: number = 0, limit: number = 100): Promise<Array<Permission> | undefined> {
-		Check.min(skip, 0, 'skip');
-		Check.inRange(limit, 1, 100, 'limit');
+		min(skip, 0, 'skip');
+		inRange(limit, 1, 100, 'limit');
 		return cast<Array<Permission>>(await this.api.get(`/permission/list?skip=${skip}&limit=${limit}`));
 	}
 
@@ -354,26 +357,38 @@ class Ciam {
 	 * @param required the required permission flags
 	 * @param additional additional flags to give to the subject temporarily
 	 * @param includeMissing if the response should include the missing permissions
-	 * @returns a {@link Model.CheckResult}, or undefined
+	 * @returns a {@link CheckResult}, or undefined
 	 * @throws if {@link type} is not one of `user`, `role`, or `discordUser`
 	 * @throws if {@link type} is `user` or `role` and {@link id} is not a valid objectId
 	 * @throws if {@link type} is `discordUser` and {@link id} is not a valid discordId
 	 * @throws if {@link required} contains invalid flags
 	 * @throws if {@link additional} contains invalid flags
 	 */
-	async checkPermissions(type: 'user' | 'role' | 'discordUser', id: string, required: Array<string>, additional: Array<string> = [], includeMissing: boolean = false): Promise<Model.CheckResult | undefined> {
-		Check.oneOf(type, ['user', 'role', 'discordUser'], 'type');
-		if (type == 'user' || type == 'role') Check.objectId(id, 'id');
-		else if (type == 'discordUser') Check.discordId(id);
-		Check.notEmpty(required, 'required');
-		required.forEach(f => Check.flag(f));
-		additional?.forEach(f => Check.flag(f));
-		return cast<Model.CheckResult>(await this.api.post('/permission/has', {
+	async checkPermissions(type: 'user' | 'role' | 'discordUser', id: string, required: Array<string>, additional: Array<string> = [], includeMissing: boolean = false): Promise<CheckResult | undefined> {
+		oneOf(type, ['user', 'role', 'discordUser'], 'type');
+		if (type == 'user' || type == 'role') objectId(id, 'id');
+		else if (type == 'discordUser') discordId(id);
+		notEmpty(required, 'required');
+		required.forEach(f => flag(f));
+		additional?.forEach(f => flag(f));
+		return cast<CheckResult>(await this.api.post('/permission/has', {
 			type: type,
 			id: id,
 			required: required,
 			additional: additional,
 			includeMissing: includeMissing
+		}));
+	}
+
+	generateAuthUrl(returnUrl: string) {
+		return `${this.baseUrl}/login?domain=${this.domain}&returnUrl=${returnUrl}&clientId=${this.self._id}&scope=identify`;
+	}
+
+	async getUserFromAuthToken(authToken: string): Promise<User | undefined> {
+		return cast<User>(await this.api.get('/auth/user', {
+			headers: {
+				'ciam_token': authToken
+			}
 		}));
 	}
 
